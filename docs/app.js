@@ -1,4 +1,6 @@
-// QOM Hunter Iceland. Units toggle between miles (default) and kilometers.
+// QOM Hunter Iceland - units toggle between miles and kilometers.
+// Internal storage always metric; conversion happens only when reading
+// from sliders and writing to display.
 
 const KM_PER_MI = 1.609344;
 
@@ -9,6 +11,11 @@ const state = {
   direction: "all",
   units: "mi",
   segLayers: [],
+  // Filter values stored internally in metric always
+  distMinKm: 0.1 * KM_PER_MI,
+  distMaxKm: 5.0 * KM_PER_MI,
+  maxKph: 20 * KM_PER_MI,
+  minPaceMinPerKm: 6.5 / KM_PER_MI,
 };
 
 const map = L.map("map").setView([64.65, -18.5], 7);
@@ -27,67 +34,125 @@ fetch("segments.json")
     rerender();
   })
   .catch(err => {
-    document.getElementById("results-count").textContent =
-      "Failed to load dataset.";
+    document.getElementById("results-count").textContent = "Failed to load dataset.";
     console.error(err);
   });
 
 const $ = id => document.getElementById(id);
 
-// Slider ranges depend on units. Reconfigure them when units switch.
-// Distance sliders go 0.05 to 10 mi = 0.08 to 16.09 km; we round.
-// Speed slider goes 10-35 mph = 16-56 kph.
-// Pace slider goes 4-12 min/mi = 2.49-7.46 min/km.
-const SLIDER_RANGES = {
+// ---------- Slider ranges ----------
+// Each unit system defines the slider bounds and default values.
+// Values shown to the user are always in the current unit system.
+const RANGES = {
   mi: {
-    dist: { min: 0.05, max: 10, step: 0.05, default_min: 0.1, default_max: 5.0 },
-    speed: { min: 10, max: 35, step: 1, default: 20 },
-    pace: { min: 4.0, max: 12.0, step: 0.1, default: 6.5 },
+    dist: { min: 0.05, max: 10, step: 0.05 },
+    speed: { min: 10, max: 35, step: 1 },
+    pace: { min: 4.0, max: 12.0, step: 0.1 },
   },
   km: {
-    dist: { min: 0.1, max: 16, step: 0.1, default_min: 0.2, default_max: 8.0 },
-    speed: { min: 15, max: 55, step: 1, default: 30 },
-    pace: { min: 2.5, max: 7.5, step: 0.1, default: 4.0 },
+    dist: { min: 0.1, max: 16, step: 0.1 },
+    speed: { min: 15, max: 55, step: 1 },
+    pace: { min: 2.5, max: 7.5, step: 0.1 },
   },
 };
 
-function applyUnits() {
-  const r = SLIDER_RANGES[state.units];
+// ---------- Unit conversion helpers ----------
+function distFromSlider(rawValue) {
+  // Slider value in current units -> internal km
+  return state.units === "mi" ? rawValue * KM_PER_MI : rawValue;
+}
+function distToSlider(km) {
+  // internal km -> value to show on slider in current units
+  return state.units === "mi" ? km / KM_PER_MI : km;
+}
+function speedFromSlider(rawValue) {
+  return state.units === "mi" ? rawValue * KM_PER_MI : rawValue;
+}
+function speedToSlider(kph) {
+  return state.units === "mi" ? kph / KM_PER_MI : kph;
+}
+function paceFromSlider(rawValue) {
+  // Slider is min per current unit -> internal min per km
+  return state.units === "mi" ? rawValue / KM_PER_MI : rawValue;
+}
+function paceToSlider(minPerKm) {
+  return state.units === "mi" ? minPerKm * KM_PER_MI : minPerKm;
+}
+
+// Formatters for the results/popup
+function formatDist(distM) {
+  const km = distM / 1000;
+  const val = state.units === "mi" ? km / KM_PER_MI : km;
+  return val.toFixed(2);
+}
+function formatSpeed(kph) {
+  const val = state.units === "mi" ? kph / KM_PER_MI : kph;
+  return val.toFixed(1);
+}
+function formatPace(minPerKm) {
+  const perUnit = state.units === "mi" ? minPerKm * KM_PER_MI : minPerKm;
+  const mins = Math.floor(perUnit);
+  const secs = Math.round((perUnit - mins) * 60);
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+function unitLabel() { return state.units; }
+function speedLabel() { return state.units === "mi" ? "mph" : "kph"; }
+function paceLabel() { return state.units === "mi" ? "min/mi" : "min/km"; }
+
+// ---------- Sync sliders and labels from state ----------
+function syncSliders() {
+  const r = RANGES[state.units];
   const dm = $("dist-min"), dM = $("dist-max");
+  const sp = $("max-speed"), pa = $("min-pace");
+
   dm.min = r.dist.min; dm.max = r.dist.max; dm.step = r.dist.step;
   dM.min = r.dist.min; dM.max = r.dist.max; dM.step = r.dist.step;
-  dm.value = r.dist.default_min; dM.value = r.dist.default_max;
-
-  const sp = $("max-speed");
   sp.min = r.speed.min; sp.max = r.speed.max; sp.step = r.speed.step;
-  sp.value = r.speed.default;
-
-  const pa = $("min-pace");
   pa.min = r.pace.min; pa.max = r.pace.max; pa.step = r.pace.step;
-  pa.value = r.pace.default;
 
-  // labels
-  document.querySelectorAll(".dist-unit").forEach(e => e.textContent = state.units);
-  document.querySelectorAll(".speed-unit").forEach(e => e.textContent = state.units === "mi" ? "mph" : "kph");
-  document.querySelectorAll(".pace-unit").forEach(e => e.textContent = state.units === "mi" ? "min/mi" : "min/km");
+  dm.value = clamp(distToSlider(state.distMinKm), r.dist.min, r.dist.max);
+  dM.value = clamp(distToSlider(state.distMaxKm), r.dist.min, r.dist.max);
+  sp.value = clamp(speedToSlider(state.maxKph), r.speed.min, r.speed.max);
+  pa.value = clamp(paceToSlider(state.minPaceMinPerKm), r.pace.min, r.pace.max);
 
-  $("dist-min-val").textContent = (+dm.value).toFixed(state.units === "mi" ? 2 : 1);
-  $("dist-max-val").textContent = (+dM.value).toFixed(state.units === "mi" ? 2 : 1);
-  $("max-speed-val").textContent = sp.value;
-  $("min-pace-val").textContent = (+pa.value).toFixed(1);
+  updateLabels();
 }
 
-function bindRange(inputId, valId, fmt = v => v) {
-  const input = $(inputId), val = $(valId);
-  input.addEventListener("input", () => {
-    val.textContent = fmt(input.value);
-    rerender();
-  });
+function updateLabels() {
+  document.querySelectorAll(".dist-unit").forEach(e => e.textContent = unitLabel());
+  document.querySelectorAll(".speed-unit").forEach(e => e.textContent = speedLabel());
+  document.querySelectorAll(".pace-unit").forEach(e => e.textContent = paceLabel());
+  $("dist-min-val").textContent = (+$("dist-min").value).toFixed(state.units === "mi" ? 2 : 1);
+  $("dist-max-val").textContent = (+$("dist-max").value).toFixed(state.units === "mi" ? 2 : 1);
+  $("max-speed-val").textContent = (+$("max-speed").value).toFixed(0);
+  $("min-pace-val").textContent = (+$("min-pace").value).toFixed(1);
 }
-bindRange("dist-min", "dist-min-val", v => (+v).toFixed(state.units === "mi" ? 2 : 1));
-bindRange("dist-max", "dist-max-val", v => (+v).toFixed(state.units === "mi" ? 2 : 1));
-bindRange("max-speed", "max-speed-val");
-bindRange("min-pace", "min-pace-val", v => (+v).toFixed(1));
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// ---------- Slider input handlers ----------
+$("dist-min").addEventListener("input", () => {
+  state.distMinKm = distFromSlider(parseFloat($("dist-min").value));
+  updateLabels();
+  rerender();
+});
+$("dist-max").addEventListener("input", () => {
+  state.distMaxKm = distFromSlider(parseFloat($("dist-max").value));
+  updateLabels();
+  rerender();
+});
+$("max-speed").addEventListener("input", () => {
+  state.maxKph = speedFromSlider(parseFloat($("max-speed").value));
+  updateLabels();
+  rerender();
+});
+$("min-pace").addEventListener("input", () => {
+  state.minPaceMinPerKm = paceFromSlider(parseFloat($("min-pace").value));
+  updateLabels();
+  rerender();
+});
+
+// ---------- Toggle handlers ----------
 $("hide-glitches").addEventListener("change", rerender);
 $("include-personal").addEventListener("change", rerender);
 
@@ -125,14 +190,15 @@ document.querySelectorAll(".units-btn").forEach(b => {
     document.querySelectorAll(".units-btn").forEach(x => x.classList.remove("active"));
     b.classList.add("active");
     state.units = b.dataset.units;
-    applyUnits();
+    syncSliders();  // reconfigure sliders for new units, values stay in metric
     rerender();
   });
 });
 
-// Set up initial unit labels
-applyUnits();
+// ---------- Initial sync ----------
+syncSliders();
 
+// ---------- Map rendering ----------
 function decodePolyline(str) {
   let index = 0, lat = 0, lng = 0, coords = [];
   while (index < str.length) {
@@ -151,23 +217,6 @@ function decodePolyline(str) {
   return coords;
 }
 
-function formatPace(minPerKm) {
-  // Returns formatted string using current units
-  const perUnit = state.units === "mi" ? minPerKm * KM_PER_MI : minPerKm;
-  const mins = Math.floor(perUnit);
-  const secs = Math.round((perUnit - mins) * 60);
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-}
-function formatSpeed(kph) {
-  // Returns formatted number using current units (as string)
-  return (state.units === "mi" ? kph / KM_PER_MI : kph).toFixed(1);
-}
-function formatDist(distM) {
-  // Returns formatted number using current units (as string)
-  const km = distM / 1000;
-  return (state.units === "mi" ? km / KM_PER_MI : km).toFixed(2);
-}
-
 function rerender() {
   state.segLayers.forEach(l => map.removeLayer(l));
   state.segLayers = [];
@@ -176,17 +225,6 @@ function rerender() {
     $("results").innerHTML = "";
     return;
   }
-
-  // Convert slider values to km / kph / min-per-km internally, regardless of units
-  const rawDistMin = parseFloat($("dist-min").value);
-  const rawDistMax = parseFloat($("dist-max").value);
-  const rawMaxSpeed = parseFloat($("max-speed").value);
-  const rawMinPace = parseFloat($("min-pace").value);
-
-  const distMinKm = state.units === "mi" ? rawDistMin * KM_PER_MI : rawDistMin;
-  const distMaxKm = state.units === "mi" ? rawDistMax * KM_PER_MI : rawDistMax;
-  const maxKph = state.units === "mi" ? rawMaxSpeed * KM_PER_MI : rawMaxSpeed;
-  const minPaceMinPerKm = state.units === "mi" ? rawMinPace / KM_PER_MI : rawMinPace;
 
   const hideGlitches = $("hide-glitches").checked;
   const includePersonal = $("include-personal").checked;
@@ -214,11 +252,11 @@ function rerender() {
     if (state.direction === "up" && grade < FLAT_GRADE_THRESHOLD) return false;
     if (state.direction === "down" && grade > -FLAT_GRADE_THRESHOLD) return false;
     const distKm = s.dist_m / 1000;
-    if (distKm < distMinKm || distKm > distMaxKm) return false;
+    if (distKm < state.distMinKm || distKm > state.distMaxKm) return false;
     if (state.sport === "Ride") {
-      if (s[speedKey] > maxKph) return false;
+      if (s[speedKey] > state.maxKph) return false;
     } else {
-      if (s[paceKey] < minPaceMinPerKm) return false;
+      if (s[paceKey] < state.minPaceMinPerKm) return false;
     }
     return true;
   });
@@ -247,16 +285,15 @@ function rerender() {
     div.className = "result";
     const recStr = state.record === "qom" ? s.qom_str : s.kom_str;
     const distStr = formatDist(s.dist_m);
-    const distUnit = state.units;
     let rate;
     if (state.sport === "Ride") {
-      rate = `${formatSpeed(s[speedKey])} ${state.units === "mi" ? "mph" : "kph"}`;
+      rate = `${formatSpeed(s[speedKey])} ${speedLabel()}`;
     } else {
-      rate = `${formatPace(s[paceKey])}/${state.units}`;
+      rate = `${formatPace(s[paceKey])}/${unitLabel()}`;
     }
     div.innerHTML = `
       <div class="name">${s.name || "(unnamed)"}</div>
-      <div class="meta">${distStr} ${distUnit} &middot; ${(s.grade || 0).toFixed(1)}% &middot; ${state.record.toUpperCase()} ${recStr} &middot; ${rate} &middot; ${s.athlete_count || 0} athletes</div>
+      <div class="meta">${distStr} ${unitLabel()} &middot; ${(s.grade || 0).toFixed(1)}% &middot; ${state.record.toUpperCase()} ${recStr} &middot; ${rate} &middot; ${s.athlete_count || 0} athletes</div>
     `;
     div.addEventListener("click", () => {
       if (s.start) map.setView(s.start, 14);
@@ -268,16 +305,15 @@ function rerender() {
 function renderPopup(s) {
   const recStr = state.record === "qom" ? s.qom_str : s.kom_str;
   const distStr = formatDist(s.dist_m);
-  const distUnit = state.units;
   let rate;
   if (state.sport === "Ride") {
-    rate = `${formatSpeed(s[state.record + "_kph"])} ${state.units === "mi" ? "mph" : "kph"}`;
+    rate = `${formatSpeed(s[state.record + "_kph"])} ${speedLabel()}`;
   } else {
-    rate = `${formatPace(s[state.record + "_min_per_km"])} min/${state.units}`;
+    rate = `${formatPace(s[state.record + "_min_per_km"])} ${paceLabel()}`;
   }
   return `
     <b>${s.name || "(unnamed)"}</b><br>
-    ${s.type} &middot; ${distStr} ${distUnit} &middot; ${(s.grade || 0).toFixed(1)}% grade<br>
+    ${s.type} &middot; ${distStr} ${unitLabel()} &middot; ${(s.grade || 0).toFixed(1)}% grade<br>
     ${state.record.toUpperCase()}: ${recStr} (${rate})<br>
     ${s.effort_count || 0} efforts by ${s.athlete_count || 0} athletes<br>
     <a href="https://www.strava.com/segments/${s.id}" target="_blank">Open on Strava</a>
