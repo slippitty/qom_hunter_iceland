@@ -15,6 +15,14 @@
   <p class="sub">Pan the map to browse. Filters apply everywhere.</p>
 
   <div class="field">
+    <label>Units</label>
+    <div class="seg-toggle">
+      <button type="button" class="units-btn active" data-units="mi">Miles</button>
+      <button type="button" class="units-btn" data-units="km">Kilometers</button>
+    </div>
+  </div>
+
+  <div class="field">
     <label>Sport</label>
     <div class="seg-toggle">
       <button type="button" class="sport-btn active" data-sport="Ride">Ride</button>
@@ -40,18 +48,18 @@
   </div>
 
   <div class="field">
-    <label for="dist-min">Distance: <span id="dist-min-val">0.1</span> to <span id="dist-max-val">5.0</span> mi</label>
+    <label for="dist-min">Distance: <span id="dist-min-val">0.1</span> to <span id="dist-max-val">5.0</span> <span class="dist-unit">mi</span></label>
     <input id="dist-min" type="range" min="0.05" max="10" step="0.05" value="0.1">
     <input id="dist-max" type="range" min="0.05" max="10" step="0.05" value="5.0">
   </div>
 
   <div class="field" id="speed-field">
-    <label for="max-speed">Max QOM speed: <span id="max-speed-val">20</span> mph</label>
+    <label for="max-speed">Max QOM speed: <span id="max-speed-val">20</span> <span class="speed-unit">mph</span></label>
     <input id="max-speed" type="range" min="10" max="35" step="1" value="20">
   </div>
 
   <div class="field" id="pace-field" style="display:none">
-    <label for="min-pace">Min QOM pace: <span id="min-pace-val">6.5</span> min/mi</label>
+    <label for="min-pace">Min QOM pace: <span id="min-pace-val">6.5</span> <span class="pace-unit">min/mi</span></label>
     <input id="min-pace" type="range" min="4.0" max="12.0" step="0.1" value="6.5">
   </div>
 
@@ -60,7 +68,7 @@
       <input id="hide-glitches" type="checkbox" checked>
       Hide likely GPS errors
     </label>
-    <div class="hint">Drops segments under 150m and records faster than humanly possible (37 mph rides, 4:00/mi runs).</div>
+    <div class="hint">Drops segments under 150m and records faster than humanly possible.</div>
   </div>
 
   <div class="field">
