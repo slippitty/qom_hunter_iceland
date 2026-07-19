@@ -12,19 +12,7 @@
 
 <aside id="panel">
   <h1>QOM Hunter · Iceland</h1>
-  <p class="sub">Find soft Strava segments across Iceland.</p>
-
-  <div class="field">
-    <label for="location">Location</label>
-    <input id="location" type="text" placeholder="e.g. Reykjavík or Þingvellir" autocomplete="off">
-    <button id="geocode-btn" type="button">Search</button>
-    <div id="geocode-status" class="hint"></div>
-  </div>
-
-  <div class="field">
-    <label for="radius">Radius: <span id="radius-val">6</span> mi</label>
-    <input id="radius" type="range" min="0.5" max="30" step="0.5" value="6">
-  </div>
+  <p class="sub">Pan the map to browse. Filters apply everywhere.</p>
 
   <div class="field">
     <label>Sport</label>
@@ -80,7 +68,7 @@
     <div class="hint">Adds segments only Sarah has ridden. Empty until after the trip.</div>
   </div>
 
-  <div id="results-count">Enter a location to start.</div>
+  <div id="results-count">Loading segments...</div>
   <div id="results"></div>
 
   <p class="footer">

@@ -1,5 +1,5 @@
-// QOM Hunter frontend. Loads segments.json, handles filters, renders map.
-// Iceland edition. Units: miles, mph for rides, min/mile for runs.
+// QOM Hunter Iceland. All segments rendered on the map at once; filter
+// with the sidebar controls. No location search — just pan/zoom.
 
 const KM_PER_MI = 1.609344;
 
@@ -7,13 +7,9 @@ const state = {
   segments: [],
   sport: "Ride",
   record: "qom",
-  center: null,
-  centerMarker: null,
-  radiusCircle: null,
   segLayers: [],
 };
 
-// Iceland-centered map. Coordinates near Þingvellir, zoom shows most of the country.
 const map = L.map("map").setView([64.65, -18.5], 7);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19,
@@ -27,10 +23,11 @@ fetch("segments.json")
     const built = new Date(data.built_at * 1000).toLocaleDateString();
     document.getElementById("results-count").textContent =
       `Loaded ${data.segments.length} segments (built ${built}).`;
+    rerender();
   })
   .catch(err => {
     document.getElementById("results-count").textContent =
-      "Failed to load dataset. If this is a fresh deploy, run the build step first.";
+      "Failed to load dataset.";
     console.error(err);
   });
 
@@ -41,7 +38,6 @@ function bindRange(inputId, valId, fmt = v => v) {
   input.addEventListener("input", update);
   update();
 }
-bindRange("radius", "radius-val", v => (+v).toFixed(1));
 bindRange("dist-min", "dist-min-val", v => (+v).toFixed(2));
 bindRange("dist-max", "dist-max-val", v => (+v).toFixed(2));
 bindRange("max-speed", "max-speed-val");
@@ -69,43 +65,6 @@ document.querySelectorAll(".record-btn").forEach(b => {
     rerender();
   });
 });
-
-$("geocode-btn").addEventListener("click", doGeocode);
-$("location").addEventListener("keydown", e => { if (e.key === "Enter") doGeocode(); });
-
-async function doGeocode() {
-  const q = $("location").value.trim();
-  if (!q) return;
-  $("geocode-status").textContent = "Searching...";
-  try {
-    // Iceland-shaped viewbox: SW near Reykjanes tip, NE past Grímsey.
-    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&viewbox=-24.60,66.60,-13.30,63.30&bounded=1&q=${encodeURIComponent(q)}`;
-    const r = await fetch(url, { headers: { "Accept-Language": "en" } });
-    const hits = await r.json();
-    if (!hits.length) {
-      $("geocode-status").textContent = "No match. Try a more specific place name.";
-      return;
-    }
-    const hit = hits[0];
-    state.center = [parseFloat(hit.lat), parseFloat(hit.lon)];
-    $("geocode-status").textContent = hit.display_name;
-    map.setView(state.center, 12);
-    rerender();
-  } catch (e) {
-    $("geocode-status").textContent = "Geocoding failed. Try again.";
-  }
-}
-
-function haversineKm(a, b) {
-  const R = 6371;
-  const [lat1, lon1] = a, [lat2, lon2] = b;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const s = Math.sin(dLat / 2) ** 2 +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(s));
-}
 
 function decodePolyline(str) {
   let index = 0, lat = 0, lng = 0, coords = [];
@@ -136,16 +95,12 @@ function kphToMph(kph) { return kph / KM_PER_MI; }
 function rerender() {
   state.segLayers.forEach(l => map.removeLayer(l));
   state.segLayers = [];
-  if (state.radiusCircle) map.removeLayer(state.radiusCircle);
-  if (state.centerMarker) map.removeLayer(state.centerMarker);
 
-  if (!state.center || !state.segments.length) {
+  if (!state.segments.length) {
     $("results").innerHTML = "";
     return;
   }
 
-  const radiusMi = parseFloat($("radius").value);
-  const radiusKm = radiusMi * KM_PER_MI;
   const distMinKm = parseFloat($("dist-min").value) * KM_PER_MI;
   const distMaxKm = parseFloat($("dist-max").value) * KM_PER_MI;
   const maxKph = parseFloat($("max-speed").value) * KM_PER_MI;
@@ -157,12 +112,6 @@ function rerender() {
   const RIDE_GLITCH_KPH = 60.0;
   const RUN_GLITCH_MIN_PER_KM = 2.5;
   const MIN_PLAUSIBLE_DIST_M = 150;
-
-  state.centerMarker = L.marker(state.center).addTo(map);
-  state.radiusCircle = L.circle(state.center, {
-    radius: radiusKm * 1000,
-    color: "#fc4c02", weight: 1, fillOpacity: 0.05
-  }).addTo(map);
 
   const recordKey = state.record + "_s";
   const speedKey = state.record + "_kph";
@@ -179,8 +128,6 @@ function rerender() {
       if (state.sport === "Ride" && s[speedKey] > RIDE_GLITCH_KPH) return false;
       if (state.sport === "Run" && s[paceKey] < RUN_GLITCH_MIN_PER_KM) return false;
     }
-    const d = haversineKm(state.center, s.start);
-    if (d > radiusKm) return false;
     const distKm = s.dist_m / 1000;
     if (distKm < distMinKm || distKm > distMaxKm) return false;
     if (state.sport === "Ride") {
