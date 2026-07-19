@@ -7,6 +7,7 @@ const state = {
   segments: [],
   sport: "Ride",
   record: "qom",
+  direction: "all",
   segLayers: [],
 };
 
@@ -42,7 +43,6 @@ bindRange("dist-min", "dist-min-val", v => (+v).toFixed(2));
 bindRange("dist-max", "dist-max-val", v => (+v).toFixed(2));
 bindRange("max-speed", "max-speed-val");
 bindRange("min-pace", "min-pace-val", v => (+v).toFixed(1));
-bindRange("max-athletes", "max-athletes-val");
 $("hide-glitches").addEventListener("change", rerender);
 $("include-personal").addEventListener("change", rerender);
 
@@ -62,6 +62,15 @@ document.querySelectorAll(".record-btn").forEach(b => {
     document.querySelectorAll(".record-btn").forEach(x => x.classList.remove("active"));
     b.classList.add("active");
     state.record = b.dataset.record;
+    rerender();
+  });
+});
+
+document.querySelectorAll(".direction-btn").forEach(b => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll(".direction-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    state.direction = b.dataset.direction;
     rerender();
   });
 });
@@ -105,13 +114,15 @@ function rerender() {
   const distMaxKm = parseFloat($("dist-max").value) * KM_PER_MI;
   const maxKph = parseFloat($("max-speed").value) * KM_PER_MI;
   const minPaceMinPerKm = parseFloat($("min-pace").value) / KM_PER_MI;
-  const maxAthletes = parseInt($("max-athletes").value, 10);
   const hideGlitches = $("hide-glitches").checked;
   const includePersonal = $("include-personal").checked;
 
   const RIDE_GLITCH_KPH = 60.0;
   const RUN_GLITCH_MIN_PER_KM = 2.5;
   const MIN_PLAUSIBLE_DIST_M = 150;
+  // Grade threshold for uphill/downhill classification. Segments with grades
+  // between -1% and +1% are considered "flat" and only appear in "All".
+  const FLAT_GRADE_THRESHOLD = 1.0;
 
   const recordKey = state.record + "_s";
   const speedKey = state.record + "_kph";
@@ -122,12 +133,14 @@ function rerender() {
     if (s.from_activity && !includePersonal) return false;
     if (!s[recordKey]) return false;
     if (!s.start) return false;
-    if ((s.athlete_count || 0) > maxAthletes) return false;
     if (hideGlitches) {
       if (s.dist_m < MIN_PLAUSIBLE_DIST_M) return false;
       if (state.sport === "Ride" && s[speedKey] > RIDE_GLITCH_KPH) return false;
       if (state.sport === "Run" && s[paceKey] < RUN_GLITCH_MIN_PER_KM) return false;
     }
+    const grade = s.grade || 0;
+    if (state.direction === "up" && grade < FLAT_GRADE_THRESHOLD) return false;
+    if (state.direction === "down" && grade > -FLAT_GRADE_THRESHOLD) return false;
     const distKm = s.dist_m / 1000;
     if (distKm < distMinKm || distKm > distMaxKm) return false;
     if (state.sport === "Ride") {

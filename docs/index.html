@@ -31,6 +31,15 @@
   </div>
 
   <div class="field">
+    <label>Direction</label>
+    <div class="seg-toggle">
+      <button type="button" class="direction-btn active" data-direction="all">All</button>
+      <button type="button" class="direction-btn" data-direction="up">Uphill</button>
+      <button type="button" class="direction-btn" data-direction="down">Downhill</button>
+    </div>
+  </div>
+
+  <div class="field">
     <label for="dist-min">Distance: <span id="dist-min-val">0.1</span> to <span id="dist-max-val">5.0</span> mi</label>
     <input id="dist-min" type="range" min="0.05" max="10" step="0.05" value="0.1">
     <input id="dist-max" type="range" min="0.05" max="10" step="0.05" value="5.0">
@@ -47,12 +56,6 @@
   </div>
 
   <div class="field">
-    <label for="max-athletes">Max athletes who've done it: <span id="max-athletes-val">500</span></label>
-    <input id="max-athletes" type="range" min="10" max="20000" step="10" value="500">
-    <div class="hint">Lower = more obscure segment, softer record. Drag higher if no matches.</div>
-  </div>
-
-  <div class="field">
     <label class="checkbox-label">
       <input id="hide-glitches" type="checkbox" checked>
       Hide likely GPS errors
@@ -65,7 +68,7 @@
       <input id="include-personal" type="checkbox">
       Include personal segments
     </label>
-    <div class="hint">Adds segments only Sarah has ridden. Empty until after the trip.</div>
+    <div class="hint">Adds segments only Sarah has ridden.</div>
   </div>
 
   <div id="results-count">Loading segments...</div>
